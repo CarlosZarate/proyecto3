@@ -16,11 +16,8 @@
 
 package com.me.main;
 
-import java.util.List;
-
 import com.badlogic.gdx.ApplicationListener;
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input;
 import com.badlogic.gdx.Input.Keys;
 import com.badlogic.gdx.InputAdapter;
 import com.badlogic.gdx.graphics.GL10;
@@ -38,6 +35,7 @@ import com.badlogic.gdx.physics.box2d.Contact;
 import com.badlogic.gdx.physics.box2d.ContactImpulse;
 import com.badlogic.gdx.physics.box2d.ContactListener;
 import com.badlogic.gdx.physics.box2d.Fixture;
+import com.badlogic.gdx.physics.box2d.FixtureDef;
 import com.badlogic.gdx.physics.box2d.Manifold;
 import com.badlogic.gdx.physics.box2d.PolygonShape;
 import com.badlogic.gdx.physics.box2d.World;
@@ -56,14 +54,19 @@ public class startgame extends InputAdapter implements ApplicationListener,Conta
 	Fixture playerSensorFixture;
 	OrthographicCamera cam;
 	Box2DDebugRenderer renderer;
-	Array<MovingPlatform> platforms = new Array<MovingPlatform>();
-	MovingPlatform groundedPlatform = null;
 	float stillTime = 0;
 	long lastGroundTime = 0;
 	SpriteBatch batch;
 	BitmapFont font;
 	private RubeSceneLoader loader;
 	private RubeScene scene;
+	private boolean drif = false;
+	
+	/*>>>> Tipos de body <<<<<<*/
+	static int TIPOPLAYER = 4;
+	static int TIPOPISO = 1;
+	static int TIPODERRAPE = 3;
+	static int TIPOSIERRA = 2;
  
 	@Override
 	public void create() {
@@ -154,20 +157,28 @@ public class startgame extends InputAdapter implements ApplicationListener,Conta
 	private Body createPlayer() {
 		BodyDef def = new BodyDef();
 		def.type = BodyType.DynamicBody;
-		Body box = world.createBody(def);
  
 		PolygonShape poly = new PolygonShape();		
 		poly.setAsBox(0.2f, 0.3f);
-		playerPhysicsFixture = box.createFixture(poly, 1);
-		poly.dispose();			
+		
+		FixtureDef sqrdef = new FixtureDef();
+		sqrdef.shape = poly;	
+		sqrdef.density = 1;
  
-		CircleShape circle = new CircleShape();		
+		CircleShape circle = new CircleShape();
 		circle.setRadius(0.2f);
 		circle.setPosition(new Vector2(0, -0.25f));
-		playerSensorFixture = box.createFixture(circle, 0);		
-		circle.dispose();		
- 
+		
+		FixtureDef circledef = new FixtureDef();
+		circledef.shape = circle;
+		circledef.density = 1;
+		
+		Body box = world.createBody(def);
+		scene.setCustom(box, "tipo", TIPOPLAYER);		
 		box.setBullet(true);
+		playerPhysicsFixture = box.createFixture(sqrdef);
+		playerSensorFixture = box.createFixture(circledef);
+		
  
 		return box;
 	}
@@ -183,7 +194,7 @@ public class startgame extends InputAdapter implements ApplicationListener,Conta
 		cam.position.set(player.getPosition().x, player.getPosition().y, 0);
 		cam.update();
 		renderer.render(world,cam.combined);
- 
+		world.setContactListener(this);
 		Vector2 vel = player.getLinearVelocity();
 		Vector2 pos = player.getPosition();		
 		boolean grounded = isPlayerGrounded(Gdx.graphics.getDeltaTime());
@@ -214,8 +225,8 @@ public class startgame extends InputAdapter implements ApplicationListener,Conta
  
 		// disable friction while jumping
 		if(!grounded) {			
-			playerPhysicsFixture.setFriction(0f);
-			playerSensorFixture.setFriction(0f);			
+			/*playerPhysicsFixture.setFriction(0f);
+			playerSensorFixture.setFriction(0f);*/		
 		} else {
 			/*if(!Gdx.input.isKeyPressed(Keys.A) && !Gdx.input.isKeyPressed(Keys.D) && stillTime > 0.2) {
 				playerPhysicsFixture.setFriction(100f);
@@ -225,10 +236,6 @@ public class startgame extends InputAdapter implements ApplicationListener,Conta
 				playerPhysicsFixture.setFriction(0.2f);
 				playerSensorFixture.setFriction(0.2f);
 			}*/
- 
-			if(groundedPlatform != null && groundedPlatform.dist == 0) {
-				player.applyLinearImpulse(0, -24, pos.x, pos.y,true);				
-			}
 		}		
  
 		// apply left impulse, but only if max velocity is not reached yet
@@ -240,6 +247,7 @@ public class startgame extends InputAdapter implements ApplicationListener,Conta
 		if(Gdx.input.isKeyPressed(Keys.D) && vel.x < MAX_VELOCITY) {
 			player.applyLinearImpulse(0.5f, 0, pos.x, pos.y,true);
 		}
+		
  
 		// jump, but only when grounded
 		if(jump) {			
@@ -248,15 +256,14 @@ public class startgame extends InputAdapter implements ApplicationListener,Conta
 				player.setLinearVelocity(vel.x, 0);			
 				System.out.println("jump before: " + player.getLinearVelocity());
 				player.setTransform(pos.x, pos.y + 0.01f, 0);
-				player.applyLinearImpulse(0, 1.5f, pos.x, pos.y,true);			
+				player.applyLinearImpulse(0, 2f, pos.x, pos.y,true);			
 				System.out.println("jump, " + player.getLinearVelocity());				
 			}
-		}					
- 
-		// update platforms
-		for(int i = 0; i < platforms.size; i++) {
-			MovingPlatform platform = platforms.get(i);
-			platform.update(Math.max(1/30.0f, Gdx.graphics.getDeltaTime()));
+		}
+		
+		if(drif){
+			if(vel.y < -3)
+				player.applyLinearImpulse(0, 0.2f, pos.x, pos.y,true);
 		}
  
 		// le step...			
@@ -269,13 +276,12 @@ public class startgame extends InputAdapter implements ApplicationListener,Conta
 		batch.end();
 	}	
  
-	private boolean isPlayerGrounded(float deltaTime) {				
-		groundedPlatform = null;
+	private boolean isPlayerGrounded(float deltaTime) {		
 		Array<Contact> contactList = world.getContactList();
 		for(int i = 0; i < contactList.size; i++) {
 			Contact contact = contactList.get(i);
 			if(contact.isTouching() && (contact.getFixtureA() == playerSensorFixture ||
-			   contact.getFixtureB() == playerSensorFixture)) {				
+			   contact.getFixtureB() == playerSensorFixture)) {			
  
 				Vector2 pos = player.getPosition();
 				WorldManifold manifold = contact.getWorldManifold();
@@ -283,18 +289,9 @@ public class startgame extends InputAdapter implements ApplicationListener,Conta
 				for(int j = 0; j < manifold.getNumberOfContactPoints(); j++) {
 					below &= (manifold.getPoints()[j].y < pos.y - 0.1f);
 				}
- 
-				if(below) {
-					if(contact.getFixtureA().getUserData() != null && contact.getFixtureA().getUserData().equals("p")) {
-						groundedPlatform = (MovingPlatform)contact.getFixtureA().getBody().getUserData();							
-					}
- 
-					if(contact.getFixtureB().getUserData() != null && contact.getFixtureB().getUserData().equals("p")) {
-						groundedPlatform = (MovingPlatform)contact.getFixtureB().getBody().getUserData();
-					}											
-					return true;			
+				if(below) {                                                                                      
+                    return true;                        
 				}
- 
 				return false;
 			}
 		}
@@ -335,47 +332,74 @@ public class startgame extends InputAdapter implements ApplicationListener,Conta
 	public boolean touchDown(int x, int y, int pointerId, int button) {
 		return false;
 	}
- 
-	class MovingPlatform {
-		Body platform;		
-		Vector2 pos = new Vector2();
-		Vector2 dir = new Vector2();
-		float dist = 0;
-		float maxDist = 0;		
- 
-		public MovingPlatform(float x, float y, float width, float height, float dx, float dy, float maxDist) {
-			platform = createBox(BodyType.KinematicBody, width, height, 1);			
-			pos.x = x;
-			pos.y = y;
-			dir.x = dx;
-			dir.y = dy;
-			this.maxDist = maxDist;
-			platform.setTransform(pos, 0);
-			platform.getFixtureList().get(0).setUserData("p");
-			platform.setUserData(this);
-		}
- 
-		public void update(float deltaTime) {
-			dist += dir.len() * deltaTime;
-			if(dist > maxDist) {
-				dir.mul(-1);
-				dist = 0;
-			}
- 
-			platform.setLinearVelocity(dir);			
-		}
-	}
 
 	@Override
 	public void beginContact(Contact contact) {
 		// TODO Auto-generated method stub
-		
+		Body objcontact1;
+	    Body objcontact2;
+	    Boolean isPlayer = false;
+	    int TipoA = (Integer) scene.getCustom(contact.getFixtureA().getBody(), "tipo", 0);
+	    int TipoB = (Integer) scene.getCustom(contact.getFixtureB().getBody(), "tipo", 0);
+	    if(TipoA==4){		
+	    	objcontact1=contact.getFixtureB().getBody();
+	    	objcontact2 = null;
+	    	isPlayer = true;
+	    }else if(TipoB==4){
+	    	objcontact1=contact.getFixtureA().getBody();	
+	    	objcontact2 = null;
+	    	isPlayer = true;
+	    }else{
+	    	objcontact1=contact.getFixtureA().getBody();
+	    	objcontact2=contact.getFixtureB().getBody();		
+	    }
+	    int tipopbj1 = (Integer)scene.getCustom(objcontact1, "tipo", 0);
+	    int tipopbj2 = (Integer)scene.getCustom(objcontact2, "tipo", 0);
+	    
+	    if(isPlayer){
+	    	if(tipopbj1==3){
+	    		drif = true;
+	    		//playerPhysicsFixture.setFriction(0.2f);
+	    		//playerSensorFixture.setFriction(0.2f);
+	    		System.out.println(true);
+	    	}
+	    }
+	    if(!isPlayer){
+	    	
+	    }
 	}
 
 	@Override
 	public void endContact(Contact contact) {
 		// TODO Auto-generated method stub
-		
+		Body objcontact1;
+	    Body objcontact2;
+	    Boolean isPlayer = false;
+	    int TipoA = (Integer) scene.getCustom(contact.getFixtureA().getBody(), "tipo", 0);
+	    int TipoB = (Integer) scene.getCustom(contact.getFixtureB().getBody(), "tipo", 0);
+	    if(TipoA==4){		
+	    	objcontact1=contact.getFixtureB().getBody();
+	    	objcontact2 = null;
+	    	isPlayer = true;
+	    }else if(TipoB==4){
+	    	objcontact1=contact.getFixtureA().getBody();	
+	    	objcontact2 = null;
+	    	isPlayer = true;
+	    }else{
+	    	objcontact1=contact.getFixtureA().getBody();
+	    	objcontact2=contact.getFixtureB().getBody();		
+	    }
+	    int tipopbj1 = (Integer)scene.getCustom(objcontact1, "tipo", 0);
+	    int tipopbj2 = (Integer)scene.getCustom(objcontact2, "tipo", 0);
+	    
+	    if(isPlayer){
+	    	if(tipopbj1==3){
+	    		drif = false;
+	    	}
+	    }
+	    if(!isPlayer){
+	    	
+	    }
 	}
 
 	@Override
